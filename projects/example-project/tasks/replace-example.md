@@ -1,10 +1,10 @@
 ---
 id: 1
 project: "[[example-project/example-project]]"
-status: todo
+status: doing
 tags: [task]
 created: 2026-06-12
-updated: 2026-06-12
+updated: 2026-06-14
 est_days: 0.5
 rice_reach: 1
 rice_impact: 5
