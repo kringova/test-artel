@@ -96,6 +96,20 @@ const STATUS_LABEL = { todo: "Todo", doing: "В работе", done: "Готов
 const PRIORITY_LABEL = { high: "Высокий", medium: "Средний", low: "Низкий" };
 const isOpen = (t) => t.status === "todo" || t.status === "doing" || t.status === "blocked";
 
+// ── Грейд-бейдж ──
+const GRADE_BADGE = {
+  junior: { emoji: "🐣", bg: "#ecfccb", color: "#4d7c0f" },
+  middle: { emoji: "🦆", bg: "#e0f2fe", color: "#0369a1" },
+  senior: { emoji: "🦅", bg: "#ede9fe", color: "#6d28d9" },
+};
+function gradeBadge(tier) {
+  if (!tier) return "";
+  const t = String(tier).toLowerCase();
+  const cfg = GRADE_BADGE[t];
+  if (!cfg) return "";
+  return `<span class="grade-badge" style="background:${cfg.bg};color:${cfg.color}" title="${t}">${cfg.emoji}</span>`;
+}
+
 function progressColor(pct) {
   if (pct === 0) return "#d4d4d4";
   if (pct < 34) return "#fb7185";
@@ -134,10 +148,12 @@ function projectCard(p, tasks, clickable) {
 }
 
 function taskCard(t) {
-  return `<a class="kc kc-link" href="/t/${esc(t.id)}">
+  const tier = String(t.model_tier || "").toLowerCase();
+  const gb = gradeBadge(tier);
+  return `<a class="kc kc-link" href="/t/${esc(t.id)}" data-project="${esc(t.project)}" data-grade="${esc(tier)}">
     <div class="kc-top"><span class="kc-id">${ticket(t.id)}</span>${t._rice != null ? `<span class="rice">${fmtRice(t._rice)}</span>` : ""}</div>
     <div class="kc-sum">${sumtext(t)}</div>
-    <div class="kc-foot"><span class="badge b-soft">${esc(t.project)}</span>${(t.tags || []).includes("bug") ? `<span class="badge s-blocked">bug</span>` : ""}${t.status === "review" ? `<span class="badge s-review">ревью</span>` : ""}</div>
+    <div class="kc-foot"><span class="badge b-soft">${esc(t.project)}</span>${(t.tags || []).includes("bug") ? `<span class="badge s-blocked">bug</span>` : ""}${t.status === "review" ? `<span class="badge s-review">ревью</span>` : ""}${gb ? `<span class="grade-wrap">${gb}</span>` : ""}</div>
   </a>`;
 }
 
@@ -205,6 +221,7 @@ function projectsPage({ projects, tasks }) {
 }
 
 function kanbanPage({ tasks }) {
+  const today = new Date().toISOString().slice(0, 10);
   const open = tasks.filter(isOpen);
   const byRice = [...open].sort((a, b) => (b._rice ?? -1) - (a._rice ?? -1));
   const todo = byRice.filter((t) => t.status === "todo" || t.status === "blocked");
@@ -213,43 +230,114 @@ function kanbanPage({ tasks }) {
   const allDone = tasks.filter((t) => t.status === "done").sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
   const doneShown = allDone.slice(0, 15);
 
-  const reviewCards = review.map((t) => `<a class="kc kc-link" href="/t/${esc(t.id)}">
+  // Счётчики «сегодня»
+  const todayCreated = tasks.filter((t) => {
+    const d = String(t.created_at || t.created || "").slice(0, 10);
+    return d === today;
+  }).length;
+  const todayDone = allDone.filter((t) => {
+    const d = String(t.closed_at || t.updated || "").slice(0, 10);
+    return d === today;
+  }).length;
+
+  // Собираем уникальные проекты для фильтр-бара
+  const allKanbanTasks = [...todo, ...doing, ...review, ...doneShown];
+  const projectSlugs = [...new Set(tasks.map((t) => t.project))].sort();
+
+  const reviewCards = review.map((t) => {
+    const tier = String(t.model_tier || "").toLowerCase();
+    const gb = gradeBadge(tier);
+    return `<a class="kc kc-link" href="/t/${esc(t.id)}" data-project="${esc(t.project)}" data-grade="${esc(tier)}">
     <div class="kc-top"><span class="kc-id">${ticket(t.id)}</span></div>
     <div class="kc-sum">${sumtext(t)}</div>
-    <div class="kc-foot"><span class="badge b-soft">${esc(t.project)}</span></div>
+    <div class="kc-foot"><span class="badge b-soft">${esc(t.project)}</span>${gb ? `<span class="grade-wrap">${gb}</span>` : ""}</div>
     <div class="kc-approve">${approveButton(t.id)}</div>
-  </a>`).join("") || '<div class="kempty">пусто</div>';
+  </a>`;
+  }).join("") || '<div class="kempty">📭 пусто</div>';
 
-  const col = (title, list, bg, fg, total, extra = "") => `<div class="kcol">
-    <div class="kcol-h"><span class="kpill" style="background:${bg};color:${fg}">${title}</span><span class="kcount">${total ?? list.length}</span></div>
-    ${list.map(taskCard).join("") || '<div class="kempty">пусто</div>'}${extra}
-  </div>`;
+  const todoCounterHtml = todayCreated > 0 ? `<span class="kcol-today today-blue">+${todayCreated} сегодня</span>` : "";
+  const doneCounterHtml = todayDone > 0 ? `<span class="kcol-today today-green">✓${todayDone} сегодня</span>` : "";
 
-  return `<div class="kanban kanban-4">
-    ${col("Todo", todo, "#f1f5f9", "#475569")}
-    ${col("В работе", doing, "#eff6ff", "#1d4ed8")}
-    <div class="kcol">
-      <div class="kcol-h"><span class="kpill" style="background:#fdf4ff;color:#7e22ce">На ревью</span><span class="kcount">${review.length}</span></div>
-      ${reviewCards}
+  const colHeader = (title, bg, fg, count, extraHtml = "") =>
+    `<div class="kcol-h"><span class="kpill" style="background:${bg};color:${fg}">${title}</span><span class="kcount">${count}</span>${extraHtml}</div>`;
+
+  const todoCards = todo.map(taskCard).join("") || '<div class="kempty">📭 пусто</div>';
+  const doingCards = doing.map(taskCard).join("") || '<div class="kempty">📭 пусто</div>';
+  const doneCards = doneShown.map(taskCard).join("") + (allDone.length > doneShown.length ? `<div class="kmore">+ ещё ${allDone.length - doneShown.length} (показаны 15 свежих)</div>` : "");
+
+  // Фильтр-бар
+  const projChips = projectSlugs.map((s) => `<button class="fchip" data-ftype="project" data-fval="${esc(s)}">${esc(s)}</button>`).join("");
+  const gradeChips = [
+    `<button class="fchip fchip-active" data-ftype="grade" data-fval="">Все грейды</button>`,
+    `<button class="fchip" data-ftype="grade" data-fval="junior">🐣 junior</button>`,
+    `<button class="fchip" data-ftype="grade" data-fval="middle">🦆 middle</button>`,
+    `<button class="fchip" data-ftype="grade" data-fval="senior">🦅 senior</button>`,
+  ].join("");
+
+  return `<div id="kb-filterbar" class="kb-filterbar">
+    <div class="kb-filter-row">
+      <button class="fchip fchip-active" data-ftype="project" data-fval="">Все</button>
+      ${projChips}
     </div>
-    ${col("Готово", doneShown, "#ecfdf5", "#047857", allDone.length, allDone.length > doneShown.length ? `<div class="kmore">+ ещё ${allDone.length - doneShown.length} (показаны 15 свежих)</div>` : "")}
+    <div class="kb-filter-row">${gradeChips}</div>
+  </div>
+  <div class="kanban kanban-4" id="kanban-board">
+    <div class="kcol" id="kcol-todo">
+      ${colHeader("Todo", "#f1f5f9", "#475569", todo.length, todoCounterHtml)}
+      <div id="kcol-todo-cards">${todoCards}</div>
+    </div>
+    <div class="kcol" id="kcol-doing">
+      ${colHeader("В работе", "#eff6ff", "#1d4ed8", doing.length)}
+      <div id="kcol-doing-cards">${doingCards}</div>
+    </div>
+    <div class="kcol" id="kcol-review">
+      ${colHeader("На ревью", "#fdf4ff", "#7e22ce", review.length)}
+      <div id="kcol-review-cards">${reviewCards}</div>
+    </div>
+    <div class="kcol" id="kcol-done">
+      ${colHeader("Готово", "#ecfdf5", "#047857", allDone.length, doneCounterHtml)}
+      <div id="kcol-done-cards">${doneCards || '<div class="kempty">📭 пусто</div>'}</div>
+    </div>
   </div>`;
 }
 
 function ricePage({ tasks }) {
   const byRice = tasks.filter(isOpen).sort((a, b) => (b._rice ?? -1) - (a._rice ?? -1));
   const max = byRice[0]?._rice || 1;
-  const rows = byRice.slice(0, 60).map((t) => `<tr onclick="location.href='/t/${esc(t.id)}'" style="cursor:pointer">
+
+  // Уникальные проекты для фильтр-бара RICE
+  const projectSlugs = [...new Set(byRice.map((t) => t.project))].sort();
+  const projChips = projectSlugs.map((s) => `<button class="fchip" data-ftype="project" data-fval="${esc(s)}">${esc(s)}</button>`).join("");
+  const gradeChips = [
+    `<button class="fchip fchip-active" data-ftype="grade" data-fval="">Все грейды</button>`,
+    `<button class="fchip" data-ftype="grade" data-fval="junior">🐣 junior</button>`,
+    `<button class="fchip" data-ftype="grade" data-fval="middle">🦆 middle</button>`,
+    `<button class="fchip" data-ftype="grade" data-fval="senior">🦅 senior</button>`,
+  ].join("");
+
+  const rows = byRice.slice(0, 60).map((t) => {
+    const tier = String(t.model_tier || "").toLowerCase();
+    const gb = gradeBadge(tier);
+    return `<tr class="rice-row" onclick="location.href='/t/${esc(t.id)}'" style="cursor:pointer" data-project="${esc(t.project)}" data-grade="${esc(tier)}">
       <td class="kc-id-cell">${ticket(t.id)}</td>
-      <td class="tname">${sumtext(t)}</td>
+      <td class="tname">${sumtext(t)}${gb ? ` <span class="grade-wrap">${gb}</span>` : ""}</td>
       <td class="muted">${esc(t.project)}</td>
       <td class="ricecell">
         <span class="rice-bar"><span style="width:${Math.round(((t._rice ?? 0) / max) * 100)}%"></span></span>
         <span class="rice">${fmtRice(t._rice)}</span>
       </td>
-    </tr>`).join("");
-  return `<table><thead><tr><th>#</th><th>Задача</th><th>Проект</th><th style="text-align:right">RICE</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="4" class="muted">Открытых задач нет.</td></tr>'}</tbody></table>`;
+    </tr>`;
+  }).join("");
+
+  return `<div id="rice-filterbar" class="kb-filterbar">
+    <div class="kb-filter-row">
+      <button class="fchip fchip-active" data-ftype="project" data-fval="">Все</button>
+      ${projChips}
+    </div>
+    <div class="kb-filter-row">${gradeChips}</div>
+  </div>
+  <table id="rice-table"><thead><tr><th>#</th><th>Задача</th><th>Проект</th><th style="text-align:right">RICE</th></tr></thead>
+    <tbody id="rice-tbody">${rows || '<tr><td colspan="4" class="muted">Открытых задач нет.</td></tr>'}</tbody></table>`;
 }
 
 function inboxForm({ projects }) {
@@ -259,7 +347,7 @@ function inboxForm({ projects }) {
       onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter')ibSubmit(event)"></textarea>
     <div class="ibf-row">
       <select id="ibproj"><option value="">Без проекта</option>${opts}</select>
-      <div class="ibf-act"><span id="ibmsg" class="ibf-msg"></span><button type="submit">В инбокс</button></div>
+      <div class="ibf-act"><button type="submit">В инбокс</button></div>
     </div>
   </form>`;
 }
@@ -268,7 +356,7 @@ function inboxPage(data) {
   const { inbox } = data;
   const list = inbox.length
     ? `<div class="inbox">${inbox.map((e) => `<div class="ie"><p class="ie-text">${esc(e.text)}</p><div class="ie-meta">${e.project ? `<span class="badge b-soft">${esc(e.project)}</span>` : ""}<span>${esc(e.created.slice(0, 16).replace("T", " "))}</span></div></div>`).join("")}</div>`
-    : '<p class="empty-box">Инбокс пуст</p>';
+    : '<p class="empty-box">📭 Инбокс пуст</p>';
   return `${inboxForm(data)}${list}
     <p class="hint">Записи копятся в <code>_inbox/</code>. Разобрать: скажите агенту «разбери инбокс» (навык inbox).</p>`;
 }
@@ -418,7 +506,7 @@ function searchPage(data, q) {
   const { projects, tasks } = data;
   if (!q || !q.trim()) {
     return `<form class="search-form" method="get" action="/search">
-      <input class="search-input" name="q" placeholder="Поиск по задачам и проектам…" autofocus>
+      <input class="search-input" id="search-input" name="q" placeholder="Поиск по задачам и проектам…" autofocus>
       <button class="search-btn" type="submit">Найти</button>
     </form>
     <p class="hint">Введите запрос для поиска по задачам (summary, тело, id) и проектам.</p>`;
@@ -466,10 +554,10 @@ function searchPage(data, q) {
       </div>`
     : "";
 
-  const noResults = !taskItems && !projItems ? '<p class="empty-box">Ничего не найдено</p>' : "";
+  const noResults = !taskItems && !projItems ? '<p class="empty-box">🔍 Ничего не найдено по запросу «' + esc(q) + '»</p>' : "";
 
   return `<form class="search-form" method="get" action="/search">
-    <input class="search-input" name="q" value="${esc(q)}" autofocus>
+    <input class="search-input" id="search-input" name="q" value="${esc(q)}" autofocus>
     <button class="search-btn" type="submit">Найти</button>
   </form>
   ${taskItems}${projItems}${noResults}`;
@@ -488,6 +576,8 @@ function taskPage(data, idStr) {
   ).join("");
 
   const roles = Array.isArray(t.roles) ? t.roles : (t.roles ? String(t.roles).split(",").map((s) => s.trim()) : []);
+  const tier = String(t.model_tier || "").toLowerCase();
+  const gb = gradeBadge(tier);
 
   return `<div class="task-page">
     <div class="task-breadcrumb">
@@ -498,7 +588,7 @@ function taskPage(data, idStr) {
     <h1 class="task-title">${sumtext(t)}</h1>
     <div class="task-meta">
       <span class="badge s-${esc(t.status)}">${esc(STATUS_LABEL[t.status] || t.status)}</span>
-      ${t.model_tier ? `<span class="badge b-soft">tier: ${esc(t.model_tier)}</span>` : ""}
+      ${t.model_tier ? `${gb}<span class="badge b-soft" style="margin-left:2px">${esc(t.model_tier)}</span>` : ""}
       ${t.sp != null ? `<span class="badge b-soft">SP: ${esc(t.sp)}</span>` : ""}
       ${t.priority ? `<span class="badge pri-${esc(t.priority)}">${esc(PRIORITY_LABEL[t.priority] || t.priority)}</span>` : ""}
       ${roles.map((r) => `<span class="badge b-soft">${esc(r)}</span>`).join("")}
@@ -534,6 +624,7 @@ function projectPage(data, slug) {
         <a class="p-task-item" href="/t/${esc(t.id)}">
           <span class="kc-id">${ticket(t.id)}</span>
           <span class="p-task-sum">${sumtext(t)}</span>
+          ${gradeBadge(String(t.model_tier || "").toLowerCase())}
           ${t._rice != null ? `<span class="rice">${fmtRice(t._rice)}</span>` : ""}
         </a>`).join("")}
       </div>
@@ -553,7 +644,7 @@ function projectPage(data, slug) {
       <div class="prog-meta"><span>${done}/${considered} готово</span><span class="prog-pct">${pct}%</span></div>
       <div class="prog-track"><div class="prog-fill" style="width:${Math.max(pct, 2)}%;background:${progressColor(pct)}"></div></div>
     </div>
-    <div class="p-groups">${groupsHtml || '<p class="empty-box">Задач нет</p>'}</div>
+    <div class="p-groups">${groupsHtml || '<p class="empty-box">📭 Задач нет</p>'}</div>
   </div>`;
 }
 
@@ -648,8 +739,8 @@ function renderShell(data, page, title, subtitle, content) {
   .dot { width:8px; height:8px; border-radius:50%; flex:none; }
   .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
   .card { display:flex; flex-direction:column; min-width:0; background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); padding:16px; }
-  .card-link { display:flex; flex-direction:column; min-width:0; background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); padding:16px; transition:box-shadow .15s,border-color .15s; }
-  .card-link:hover { border-color:#d4d4d4; box-shadow:0 3px 8px rgba(0,0,0,.08); }
+  .card-link { display:flex; flex-direction:column; min-width:0; background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); padding:16px; transition:box-shadow .15s,border-color .15s,transform .15s; }
+  .card-link:hover { border-color:#d4d4d4; box-shadow:0 3px 8px rgba(0,0,0,.08); transform:translateY(-1px); }
   .card-h { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0; }
   .card-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
@@ -671,23 +762,38 @@ function renderShell(data, page, title, subtitle, content) {
   .s-idea { background:#fffbeb; color:#b45309; } .s-paused { background:#f5f5f5; color:#737373; }
   .s-review { background:#fdf4ff; color:#7e22ce; }
   .pri-high { background:#fff1f2; color:#be123c; } .pri-medium { background:#fffbeb; color:#b45309; } .pri-low { background:#f5f5f5; color:#737373; }
-  .kanban { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:22px; }
+  /* Грейд-бейдж */
+  .grade-badge { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; font-size:13px; line-height:1; box-shadow:0 0 0 1px rgba(0,0,0,.08); flex:none; }
+  .grade-wrap { display:inline-flex; align-items:center; margin-left:2px; }
+  /* Фильтр-бар */
+  .kb-filterbar { margin-top:18px; display:flex; flex-direction:column; gap:8px; }
+  .kb-filter-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .fchip { display:inline-flex; align-items:center; gap:4px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:500; border:1px solid var(--line); background:#fff; color:var(--muted); cursor:pointer; transition:background .12s,color .12s,border-color .12s; white-space:nowrap; }
+  .fchip:hover { background:#f5f5f5; color:var(--ink); }
+  .fchip-active { background:#262626; color:#fff; border-color:#262626; }
+  .fchip-active:hover { background:#3f3f3f; }
+  /* Колонки канбана — счётчик сегодня */
+  .kcol-today { font-size:11px; font-weight:600; margin-left:auto; }
+  .today-blue { color:#1d4ed8; }
+  .today-green { color:#047857; }
+  /* Канбан */
+  .kanban { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:16px; }
   .kanban-4 { grid-template-columns:repeat(4,minmax(0,1fr)); }
   .kcol { background:rgba(245,245,245,.55); border:1px solid var(--line); border-radius:14px; padding:12px; min-width:0; }
   .kcol-h { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
   .kpill { font-size:11px; font-weight:500; padding:2px 9px; border-radius:999px; }
   .kcount { color:#a3a3a3; font-size:12px; }
   .kc { display:block; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 1px 2px rgba(0,0,0,.04); padding:10px 11px; margin-bottom:8px; min-width:0; }
-  .kc-link { transition:border-color .12s,box-shadow .12s; }
-  .kc-link:hover { border-color:#d4d4d4; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+  .kc-link { transition:border-color .12s,box-shadow .12s,transform .12s; }
+  .kc-link:hover { border-color:#d4d4d4; box-shadow:0 2px 6px rgba(0,0,0,.08); transform:translateY(-1px); }
   .kc-top { display:flex; align-items:center; justify-content:space-between; gap:6px; }
   .kc-id { font-family:ui-monospace,monospace; font-size:11px; color:#a3a3a3; }
   .kc-sum { font-size:14px; font-weight:500; color:#262626; margin-top:3px; overflow-wrap:anywhere; }
-  .kc-foot { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .kc-foot { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
   .kc-approve { margin-top:8px; }
-  .kempty { color:#c2c8d0; font-size:12px; text-align:center; padding:14px 0; }
+  .kempty { color:#c2c8d0; font-size:13px; text-align:center; padding:20px 0; }
   .kmore { color:#a3a3a3; font-size:12px; text-align:center; padding:6px 0 2px; }
-  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-top:22px; table-layout:fixed; }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-top:16px; table-layout:fixed; }
   th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:#a3a3a3; font-weight:500; padding:10px 14px; background:#fafafa; border-bottom:1px solid var(--line); }
   td { padding:10px 14px; border-bottom:1px solid #f5f5f5; vertical-align:middle; overflow:hidden; text-overflow:ellipsis; }
   tr:last-child td { border-bottom:0; }
@@ -703,11 +809,10 @@ function renderShell(data, page, title, subtitle, content) {
   .ibf { max-width:680px; margin:22px 0 14px; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.04); padding:14px; }
   .ibf textarea { width:100%; resize:none; border:1px solid var(--line); border-radius:9px; padding:9px 11px; font:inherit; font-size:14px; color:var(--ink); outline:none; }
   .ibf textarea:focus { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
-  .ibf-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:11px; flex-wrap:wrap; }
+  .ibf-row { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:11px; flex-wrap:wrap; }
   .ibf select { min-height:38px; border:1px solid var(--line); border-radius:9px; padding:6px 9px; font:inherit; font-size:14px; color:var(--muted); background:#fff; outline:none; }
   .ibf select:focus { border-color:var(--accent); }
   .ibf-act { display:flex; align-items:center; gap:12px; }
-  .ibf-msg { font-size:13px; color:var(--muted); }
   .ibf button { min-height:38px; border:0; border-radius:9px; background:var(--accent); color:#fff; font:inherit; font-size:14px; font-weight:500; padding:8px 16px; cursor:pointer; transition:opacity .15s; }
   .ibf button:hover { opacity:.9; }
   .ibf button:disabled { opacity:.4; cursor:not-allowed; }
@@ -717,6 +822,10 @@ function renderShell(data, page, title, subtitle, content) {
   .btn-approve { display:inline-flex; align-items:center; border:0; border-radius:8px; background:#7e22ce; color:#fff; font:inherit; font-size:13px; font-weight:500; padding:6px 14px; cursor:pointer; transition:opacity .15s; }
   .btn-approve:hover { opacity:.85; }
   .btn-approve:disabled { opacity:.4; cursor:not-allowed; }
+  /* Тост */
+  #toast-container { position:fixed; bottom:24px; right:24px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+  .toast { background:#262626; color:#fff; font-size:14px; font-weight:500; padding:10px 18px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.18); opacity:0; transform:translateY(8px); transition:opacity .2s,transform .2s; pointer-events:none; }
+  .toast.toast-show { opacity:1; transform:translateY(0); }
   /* Аналитика */
   .an-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:22px; }
   .an-card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px; min-width:0; }
@@ -757,7 +866,7 @@ function renderShell(data, page, title, subtitle, content) {
   .task-breadcrumb { font-size:13px; color:var(--muted); margin-bottom:8px; }
   .task-breadcrumb a:hover { text-decoration:underline; }
   .task-title { font-size:22px; font-weight:700; margin:0 0 10px; overflow-wrap:anywhere; }
-  .task-meta { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .task-meta { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; align-items:center; }
   .task-rice-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:8px; font-size:13px; color:var(--muted); }
   .task-dates { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:14px; }
   .meta-item { font-size:13px; color:var(--muted); }
@@ -777,11 +886,11 @@ function renderShell(data, page, title, subtitle, content) {
   .p-groups { margin-top:20px; display:flex; flex-direction:column; gap:16px; }
   .p-group-h { font-size:13px; font-weight:600; margin:0 0 8px; display:flex; align-items:center; gap:6px; }
   .p-task-list { display:flex; flex-direction:column; gap:6px; }
-  .p-task-item { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--line); border-radius:9px; padding:9px 13px; transition:border-color .12s; min-width:0; }
-  .p-task-item:hover { border-color:#d4d4d4; }
+  .p-task-item { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--line); border-radius:9px; padding:9px 13px; transition:border-color .12s,transform .12s; min-width:0; }
+  .p-task-item:hover { border-color:#d4d4d4; transform:translateY(-1px); }
   .p-task-sum { flex:1; min-width:0; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:anywhere; }
   @media (max-width:880px){ .grid,.kanban{grid-template-columns:1fr 1fr} .kanban-4{grid-template-columns:1fr 1fr} .an-grid{grid-template-columns:1fr 1fr} }
-  @media (max-width:580px){ .grid,.kanban,.kanban-4,.an-grid{grid-template-columns:1fr} .link{padding:6px 8px} }
+  @media (max-width:580px){ .grid,.kanban,.kanban-4,.an-grid{grid-template-columns:1fr} .link{padding:6px 8px} .kb-filterbar{margin-top:12px} #toast-container{bottom:16px;right:16px;left:16px} }
 </style></head><body>
 <nav class="nav"><div class="nav-in">
   <a class="logo" href="/"><i>ll</i> Артель</a>
@@ -792,36 +901,66 @@ function renderShell(data, page, title, subtitle, content) {
   ${link("/analytics", "Аналитика", "analytics")}
   ${link("/search", "Поиск", "search")}
 </div></nav>
+<div id="toast-container"></div>
 <div class="wrap">
   <h1>${esc(title)}</h1>
   <p class="stats">${subtitle}</p>
   ${content}
-  <p class="hint">Обновляется автоматически каждые 30 c. Данные читаются из markdown при каждом запросе.</p>
+  <p class="hint">Обновляется автоматически каждые 2 минуты. Данные читаются из markdown при каждом запросе.</p>
 </div>
 <script>
-  // Авто-обновление, но не пока пользователь печатает в инбоксе.
+(function(){
+  // ── Состояние фильтров ──
+  var filterProject = '';
+  var filterGrade = '';
+  var filterActive = false; // true если хоть один фильтр не по умолчанию
+
+  // ── Тост ──
+  function showToast(msg){
+    var c=document.getElementById('toast-container');
+    if(!c)return;
+    var d=document.createElement('div');
+    d.className='toast';
+    d.textContent=msg;
+    c.appendChild(d);
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ d.classList.add('toast-show'); });
+    });
+    setTimeout(function(){
+      d.classList.remove('toast-show');
+      setTimeout(function(){ if(d.parentNode)d.parentNode.removeChild(d); },300);
+    },2000);
+  }
+  window._showToast=showToast;
+
+  // ── Авто-обновление ──
   setInterval(function(){
+    // Пауза, если фильтр активен (не дефолтный)
+    if(filterActive)return;
     var t=document.getElementById('ibtext');
     if(t&&(t===document.activeElement||t.value.trim()))return;
-    // Не обновляем если фокус в поиске
     var s=document.querySelector('.search-input');
     if(s&&s===document.activeElement)return;
     location.reload();
-  },30000);
-  function ibSubmit(e){
+  },120000);
+
+  // ── Инбокс (сабмит) ──
+  window.ibSubmit=function(e){
     e.preventDefault();
     var t=document.getElementById('ibtext'),p=document.getElementById('ibproj'),
-        m=document.getElementById('ibmsg'),btn=document.querySelector('#ibf button');
+        btn=document.querySelector('#ibf button');
     var text=t.value.trim(); if(!text)return false;
-    btn.disabled=true; m.textContent='';
+    btn.disabled=true;
     fetch('/api/inbox',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({text:text,project:p.value})})
       .then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error(j.error||'ошибка')});return r.json()})
-      .then(function(){t.value='';p.value='';m.textContent='Записано ✓';setTimeout(function(){location.reload()},500)})
-      .catch(function(err){m.textContent=err.message;btn.disabled=false});
+      .then(function(){t.value='';p.value='';showToast('Записано ✓');setTimeout(function(){location.reload()},600)})
+      .catch(function(err){showToast(err.message);btn.disabled=false});
     return false;
-  }
-  function doApprove(id,btn){
+  };
+
+  // ── Апрув ──
+  window.doApprove=function(id,btn){
     if(!confirm('Принять задачу #'+id+' (review → done)?'))return;
     btn.disabled=true;btn.textContent='…';
     fetch('/api/approve',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -831,9 +970,78 @@ function renderShell(data, page, title, subtitle, content) {
         if(!r.ok)return r.json().then(function(j){throw new Error(j.error||'ошибка '+r.status)});
         return r.json();
       })
-      .then(function(){btn.textContent='Принято ✓';setTimeout(function(){location.reload()},700)})
+      .then(function(){showToast('Принято ✓');setTimeout(function(){location.reload()},700)})
       .catch(function(err){alert(err.message);btn.disabled=false;btn.textContent='Принять'});
+  };
+
+  // ── Фильтрация (канбан + rice) ──
+  function applyFilters(){
+    filterActive = (filterProject !== '') || (filterGrade !== '');
+    // Карточки канбана
+    var kCards=document.querySelectorAll('.kc-link[data-project]');
+    kCards.forEach(function(el){
+      var proj=el.getAttribute('data-project')||'';
+      var grade=el.getAttribute('data-grade')||'';
+      var show=(!filterProject||proj===filterProject)&&(!filterGrade||grade===filterGrade);
+      el.style.display=show?'':'none';
+    });
+    // Строки RICE-таблицы
+    var rRows=document.querySelectorAll('.rice-row');
+    rRows.forEach(function(el){
+      var proj=el.getAttribute('data-project')||'';
+      var grade=el.getAttribute('data-grade')||'';
+      var show=(!filterProject||proj===filterProject)&&(!filterGrade||grade===filterGrade);
+      el.style.display=show?'':'none';
+    });
+    // Пустые состояния колонок
+    var cols=['todo','doing','review','done'];
+    cols.forEach(function(c){
+      var wrap=document.getElementById('kcol-'+c+'-cards');
+      if(!wrap)return;
+      var visible=wrap.querySelectorAll('.kc-link[data-project]:not([style*="display: none"])').length;
+      var existingEmpty=wrap.querySelector('.kempty-filter');
+      if(visible===0&&(filterProject||filterGrade)){
+        if(!existingEmpty){
+          var d=document.createElement('div');
+          d.className='kempty kempty-filter';
+          d.textContent='📭 нет задач по фильтру';
+          wrap.appendChild(d);
+        }
+      }else{
+        if(existingEmpty)existingEmpty.parentNode.removeChild(existingEmpty);
+      }
+    });
   }
+
+  function chipClick(btn,ftype,fval){
+    // Снять активное состояние с остальных чипов той же оси
+    var allChips=document.querySelectorAll('.fchip[data-ftype="'+ftype+'"]');
+    allChips.forEach(function(c){ c.classList.remove('fchip-active'); });
+    btn.classList.add('fchip-active');
+    if(ftype==='project') filterProject=fval;
+    if(ftype==='grade') filterGrade=fval;
+    applyFilters();
+  }
+
+  // Вешаем обработчики на все фильтр-чипы
+  document.querySelectorAll('.fchip').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      chipClick(btn,btn.getAttribute('data-ftype')||'',btn.getAttribute('data-fval')||'');
+    });
+  });
+
+  // ── Горячая клавиша / (slash) ──
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='/')return;
+    var tag=(document.activeElement||{}).tagName||'';
+    if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+    e.preventDefault();
+    var inp=document.getElementById('search-input');
+    if(inp){ inp.focus(); inp.select(); }
+    else { location.href='/search'; }
+  });
+
+})();
 </script>
 </body></html>`;
 }
