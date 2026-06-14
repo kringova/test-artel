@@ -33,3 +33,4 @@ updated: 2026-06-14
 - [[tasks/sync-template-tiering-contract]] — контракт адаптера тиринга перенесён, Codex-маппинг объявлен, в review, ждёт апрува
 - [[tasks/fix-dashboard-approval-frontmatter]] — исправлено повреждение соседних полей при апруве, в review, ждёт апрува
 - [[tasks/sync-dashboard-fancy-pack]] — фильтры, грейд-маркеры и полировка дашборда перенесены, в review, ждёт апрува
+- [[tasks/sync-dashboard-navigation-analytics]] — навигация и аналитика фактических моделей обновлены, в review, ждёт апрува

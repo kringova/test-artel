@@ -85,6 +85,25 @@ function scan() {
   return { projects, tasks, inbox };
 }
 
+// ── Парсер маппинга грейд→модель (Задача 1) ──
+// Читает <ROOT>/AGENTS.md, fallback: <ROOT>/CLAUDE.md
+// Ищет строку вне code-fence блоков: - Маппинг: junior=<model>, middle=<model>, senior=<model>
+// Возвращает {junior, middle, senior} или null
+function readGradeMap() {
+  const candidates = [join(ROOT, "AGENTS.md"), join(ROOT, "CLAUDE.md")];
+  for (const fp of candidates) {
+    if (!existsSync(fp)) continue;
+    let text = readFileSync(fp, "utf8");
+    // Убираем code-fence блоки (``` ... ```) чтобы не захватить шаблонный пример
+    text = text.replace(/```[\s\S]*?```/g, "");
+    const m = text.match(/[-*]\s+Маппинг:\s*junior=([^,\n]+),\s*middle=([^,\n]+),\s*senior=([^\n]+)/);
+    if (m) {
+      return { junior: m[1].trim(), middle: m[2].trim(), senior: m[3].trim() };
+    }
+  }
+  return null;
+}
+
 // ── Хелперы рендера ──
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const cleanWiki = (s) => String(s ?? "").replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, (_m, p) => p.split("/").pop());
@@ -374,7 +393,7 @@ function analyticsPage({ projects, tasks }) {
   const totalDoing = allTasks.filter((t) => t.status === "doing").length;
   const totalDone = doneTasks.length;
 
-  // --- Распределение грейдов по всем задачам ---
+  // --- Распределение грейдов по всем задачам (плановый, по model_tier) ---
   const gradeCount = { junior: 0, middle: 0, senior: 0 };
   for (const t of allTasks) {
     const tier = String(t.model_tier || "").toLowerCase();
@@ -412,8 +431,42 @@ function analyticsPage({ projects, tasks }) {
   }
   const maxWeekCount = Math.max(...weekBuckets.map((b) => b.count), 1);
 
-  // --- Токены по грейдам: только если есть хотя бы одна задача с cost_by_model ---
+  // --- Задача 1+2: маппинг грейд→модель ---
+  const gradeMap = readGradeMap();
+
+  // --- Задача 3: фактическое использование моделей по грейдам ---
+  // Парсим cost_by_model: "model-name=io/cache; model-name2=io/cache"
+  // Относим каждую модель к грейду по подстроке (case-insensitive): маппинг senior=Opus → модель claude-opus-4-8 содержит "opus"
   const hasCostByModel = allTasks.some((t) => t.cost_by_model && String(t.cost_by_model).trim());
+  const showUsageBlock = gradeMap !== null && hasCostByModel;
+
+  const usageTokens = { junior: 0, middle: 0, senior: 0, unmatched: 0 };
+  if (showUsageBlock) {
+    for (const t of allTasks) {
+      const raw = String(t.cost_by_model || "").trim();
+      if (!raw) continue;
+      // Разбиваем по ";" (с пробелами)
+      const pairs = raw.split(/\s*;\s*/);
+      for (const pair of pairs) {
+        const pm = pair.match(/^([^=]+)=(\d+)\/\d+/);
+        if (!pm) continue;
+        const modelName = pm[1].trim().toLowerCase();
+        const io = parseInt(pm[2], 10);
+        // Ищем грейд, чья модель-подстрока входит в имя
+        let matched = false;
+        for (const grade of ["junior", "middle", "senior"]) {
+          const mapModel = gradeMap[grade].toLowerCase();
+          if (modelName.includes(mapModel)) {
+            usageTokens[grade] += io;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) usageTokens.unmatched += io;
+      }
+    }
+  }
+  const usageTotal = usageTokens.junior + usageTokens.middle + usageTokens.senior + usageTokens.unmatched;
 
   // Бар-хелпер
   const barPct = (n, total) => total > 0 ? Math.max(Math.round((n / total) * 100), 2) : 0;
@@ -437,6 +490,17 @@ function analyticsPage({ projects, tasks }) {
     </div>`;
   };
 
+  const usageBar = (grade, tokens, total) => {
+    const cfg = GRADE_BADGE[grade];
+    const pct = barPct(tokens, total || 1);
+    const pctLabel = total > 0 ? Math.round((tokens / total) * 100) : 0;
+    return `<div class="an-grade-row">
+      <span class="an-grade-label">${cfg ? cfg.emoji : ""} ${grade}</span>
+      <div class="an-bar-track"><div class="an-bar-fill" style="width:${pct}%;background:${GRADE_COLORS[grade] || "#e5e5e5"}"></div></div>
+      <span class="an-grade-cnt">${tokens.toLocaleString("ru")} <span class="muted">${pctLabel}%</span></span>
+    </div>`;
+  };
+
   const weekBars = weekBuckets.map((b) => {
     const pct = barPct(b.count, maxWeekCount);
     return `<div class="an-week-col">
@@ -447,6 +511,28 @@ function analyticsPage({ projects, tasks }) {
       <span class="an-week-lbl">${esc(b.label)}</span>
     </div>`;
   }).join("");
+
+  // --- Задача 2: карточка маппинга ---
+  const gradeMapCard = gradeMap
+    ? `<div class="an-card">
+      <div class="an-card-title">Грейд → модель</div>
+      <div class="an-card-hint">маппинг адаптера из AGENTS.md</div>
+      <div class="an-grade-map-row"><span class="grade-badge" style="background:${GRADE_BADGE.junior.bg};color:${GRADE_BADGE.junior.color}">${GRADE_BADGE.junior.emoji}</span> <span class="an-gm-grade">junior</span> <span class="an-gm-model">${esc(gradeMap.junior)}</span></div>
+      <div class="an-grade-map-row"><span class="grade-badge" style="background:${GRADE_BADGE.middle.bg};color:${GRADE_BADGE.middle.color}">${GRADE_BADGE.middle.emoji}</span> <span class="an-gm-grade">middle</span> <span class="an-gm-model">${esc(gradeMap.middle)}</span></div>
+      <div class="an-grade-map-row"><span class="grade-badge" style="background:${GRADE_BADGE.senior.bg};color:${GRADE_BADGE.senior.color}">${GRADE_BADGE.senior.emoji}</span> <span class="an-gm-grade">senior</span> <span class="an-gm-model">${esc(gradeMap.senior)}</span></div>
+    </div>`
+    : `<div class="an-card">
+      <div class="an-card-title">Грейд → модель</div>
+      <p class="an-empty">Маппинг не задан адаптером — объяви секцию «Тиринг — адаптер» в AGENTS.md (см. docs/methodology.md → Контракт адаптера)</p>
+    </div>`;
+
+  // --- Задача 3: блок использования моделей по факту ---
+  const usageBlock = showUsageBlock ? `<div class="an-card an-card-wide">
+    <div class="an-card-title">Использование моделей по грейдам</div>
+    <div class="an-card-hint">по факту, io-токены из поля cost_by_model задач · всего ${usageTotal.toLocaleString("ru")} io-токенов</div>
+    ${["junior", "middle", "senior"].map((g) => usageBar(g, usageTokens[g], usageTotal)).join("")}
+    ${usageTokens.unmatched > 0 ? `<div class="an-grade-row"><span class="an-grade-label an-gm-unmatched">вне маппинга</span><div class="an-bar-track"><div class="an-bar-fill" style="width:${barPct(usageTokens.unmatched, usageTotal)}%;background:#e5e5e5"></div></div><span class="an-grade-cnt">${usageTokens.unmatched.toLocaleString("ru")} <span class="muted">${Math.round((usageTokens.unmatched / usageTotal) * 100)}%</span></span></div>` : ""}
+  </div>` : "";
 
   return `
   <div class="an-grid">
@@ -463,8 +549,8 @@ function analyticsPage({ projects, tasks }) {
     </div>
 
     <div class="an-card">
-      <div class="an-card-title">Распределение грейдов</div>
-      <div class="an-card-hint">все задачи (${allTasks.length} всего, ${gradeTotal} с грейдом)</div>
+      <div class="an-card-title">Плановые грейды (по сложности тикетов)</div>
+      <div class="an-card-hint">план по SP, не фактическое использование моделей · ${allTasks.length} всего, ${gradeTotal} с грейдом</div>
       ${gradeTotal === 0
         ? '<p class="an-empty">Нет задач с полем model_tier</p>'
         : ["junior", "middle", "senior"].map((g) => gradeBar(g, gradeCount[g])).join("")}
@@ -484,6 +570,8 @@ function analyticsPage({ projects, tasks }) {
              : '<p class="an-empty">Ни одна done-задача не имеет model_tier</p>'}`}
     </div>
 
+    ${gradeMapCard}
+
   </div>
 
   <div class="an-card an-card-wide">
@@ -494,11 +582,7 @@ function analyticsPage({ projects, tasks }) {
       : `<div class="an-weeks">${weekBars}</div>`}
   </div>
 
-  ${hasCostByModel ? `<div class="an-card an-card-wide">
-    <div class="an-card-title">Токены по грейдам</div>
-    <div class="an-card-hint">из поля cost_by_model задач</div>
-    <p class="an-empty">Данные есть, но агрегация токенов требует расширенного формата.</p>
-  </div>` : ""}`;
+  ${usageBlock}`;
 }
 
 // ── #286 Поиск ──
@@ -654,6 +738,7 @@ const PAGES = {
   rice: { title: "RICE-приоритеты", build: ricePage },
   inbox: { title: "Инбокс", build: inboxPage },
   analytics: { title: "Аналитика", build: analyticsPage },
+  help: { title: "Справка", build: helpPage },
 };
 
 function render(data, page, extra = {}) {
@@ -698,6 +783,7 @@ function render(data, page, extra = {}) {
     : page === "rice" ? "открытые задачи по убыванию RICE"
     : page === "inbox" ? `${inbox.length} записей на разбор`
     : page === "analytics" ? `${projects.length} проектов · ${tasks.length} задач`
+    : page === "help" ? "дашборд Артели — краткое руководство"
     : `${projects.length} проектов · ${open.length} открытых задач`;
 
   content = def.build(data);
@@ -712,8 +798,34 @@ function render404(msg) {
   </head><body><div class="box"><div class="h">404</div><p>${esc(msg)}</p><p><a href="/">← На главную</a></p></div></body></html>`;
 }
 
+function helpPage() {
+  return `<div class="help-page" style="max-width:680px">
+    <p class="help-intro">Артель-дашборд — веб-витрина markdown-vault: проекты и задачи читаются из файлов vault при каждом запросе и отображаются без базы данных.</p>
+    <h2 class="md-h" style="margin-top:20px">Страницы</h2>
+    <ul class="md-ul">
+      <li><strong>Проекты</strong> (<code>/</code>) — карточки всех проектов с прогрессом и топ-задачей по RICE.</li>
+      <li><strong>Канбан</strong> (<code>/kanban</code>) — доска: Todo / В работе / На ревью / Готово; фильтры по проекту и грейду.</li>
+      <li><strong>RICE</strong> (<code>/rice</code>) — очередь открытых задач, отсортированная по RICE-приоритету.</li>
+      <li><strong>Инбокс</strong> (<code>/inbox</code>) — быстрый захват мыслей; конверт в шапке, Cmd/Ctrl+Enter для отправки.</li>
+      <li><strong>Аналитика</strong> (<code>/analytics</code>) — сводка, распределение грейдов, покрытие тиринга, скорость закрытия задач по неделям.</li>
+      <li><strong>Поиск</strong> — клавиша <kbd>/</kbd> на любой странице или прямой переход на <code>/search</code>.</li>
+    </ul>
+    <h2 class="md-h" style="margin-top:20px">Действия</h2>
+    <ul class="md-ul">
+      <li><strong>Захват в инбокс</strong> — форма на странице <code>/inbox</code>; запись сохраняется в <code>_inbox/</code>. Разобрать: «разбери инбокс» агенту (навык inbox).</li>
+      <li><strong>Апрув (review → done)</strong> — кнопка «Принять» на карточке задачи в статусе review; апрув доступен на канбане и на странице задачи.</li>
+    </ul>
+    <h2 class="md-h" style="margin-top:20px">Обновление</h2>
+    <p class="md-p">Данные читаются из markdown при каждом запросе. Страница перезагружается автоматически раз в 2 минуты (если не активен фильтр или поиск).</p>
+  </div>`;
+}
+
 function renderShell(data, page, title, subtitle, content) {
   const link = (href, label, key) => `<a class="link${page === key ? " active" : ""}" href="${href}">${label}</a>`;
+  const reviewCount = (data.tasks || []).filter(t => t.status === 'review').length;
+  const inboxActive = page === 'inbox';
+  const helpActive = page === 'help';
+  const envelopeSvg = `<svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block"><rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M2 7l8 5 8-5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Артель — ${esc(title)}</title>
@@ -851,6 +963,11 @@ function renderShell(data, page, title, subtitle, content) {
   .an-week-cnt { font-size:11px; font-weight:600; color:var(--ink); height:16px; }
   .an-week-lbl { font-size:10px; color:var(--muted); text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; width:100%; }
   .an-empty { font-size:13px; color:#a3a3a3; margin:4px 0; }
+  .an-grade-map-row { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #f5f5f5; min-width:0; }
+  .an-grade-map-row:last-child { border-bottom:0; }
+  .an-gm-grade { font-size:13px; color:var(--muted); width:48px; flex:none; }
+  .an-gm-model { font-size:13px; font-weight:500; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .an-gm-unmatched { color:var(--muted); font-style:italic; }
   /* Поиск */
   .search-form { display:flex; gap:8px; margin-bottom:22px; flex-wrap:wrap; }
   .search-input { flex:1; min-width:0; border:1px solid var(--line); border-radius:9px; padding:9px 13px; font:inherit; font-size:15px; outline:none; background:#fff; }
@@ -889,6 +1006,14 @@ function renderShell(data, page, title, subtitle, content) {
   .p-task-item { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--line); border-radius:9px; padding:9px 13px; transition:border-color .12s,transform .12s; min-width:0; }
   .p-task-item:hover { border-color:#d4d4d4; transform:translateY(-1px); }
   .p-task-sum { flex:1; min-width:0; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:anywhere; }
+  /* Правая часть навигации */
+  .nav-right { margin-left:auto; display:flex; align-items:center; gap:4px; flex-shrink:0; }
+  .nav-envelope { color:var(--muted); }
+  .nav-envelope:hover { background:#f5f5f5; color:var(--ink); }
+  .nav-envelope.active { background:#f5f5f5; color:var(--ink); }
+  .nav-badge { position:absolute; top:-4px; right:-4px; display:flex; align-items:center; justify-content:center; min-width:16px; height:16px; border-radius:999px; background:#8b5cf6; color:#fff; font-size:9px; font-weight:700; line-height:1; padding:0 3px; }
+  /* Справка */
+  .help-intro { font-size:14px; color:var(--ink); margin:0 0 4px; }
   @media (max-width:880px){ .grid,.kanban{grid-template-columns:1fr 1fr} .kanban-4{grid-template-columns:1fr 1fr} .an-grid{grid-template-columns:1fr 1fr} }
   @media (max-width:580px){ .grid,.kanban,.kanban-4,.an-grid{grid-template-columns:1fr} .link{padding:6px 8px} .kb-filterbar{margin-top:12px} #toast-container{bottom:16px;right:16px;left:16px} }
 </style></head><body>
@@ -897,14 +1022,15 @@ function renderShell(data, page, title, subtitle, content) {
   ${link("/", "Проекты", "projects")}
   ${link("/kanban", "Канбан", "kanban")}
   ${link("/rice", "RICE", "rice")}
-  ${link("/inbox", "Инбокс", "inbox")}
   ${link("/analytics", "Аналитика", "analytics")}
-  ${link("/search", "Поиск", "search")}
+  <div class="nav-right">
+    <a class="link nav-envelope${inboxActive ? " active" : ""}" href="/inbox" aria-label="Инбокс${reviewCount > 0 ? `, ${reviewCount} ждут апрува` : ""}" style="position:relative;display:inline-flex;align-items:center;padding:6px 8px">${envelopeSvg}${reviewCount > 0 ? `<span class="nav-badge">${reviewCount}</span>` : ""}</a>
+    <a class="link${helpActive ? " active" : ""}" href="/help">Справка</a>
+  </div>
 </div></nav>
 <div id="toast-container"></div>
 <div class="wrap">
-  <h1>${esc(title)}</h1>
-  <p class="stats">${subtitle}</p>
+  ${page === "task" || page === "project" ? "" : `<h1>${esc(title)}</h1>\n  <p class="stats">${subtitle}</p>`}
   ${content}
   <p class="hint">Обновляется автоматически каждые 2 минуты. Данные читаются из markdown при каждом запросе.</p>
 </div>
@@ -1184,6 +1310,7 @@ const server = createServer((req, res) => {
     else if (path === "/rice") page = "rice";
     else if (path === "/inbox") page = "inbox";
     else if (path === "/analytics") page = "analytics";
+    else if (path === "/help") page = "help";
     else if (path === "/search") {
       page = "search";
       extra.q = urlObj.searchParams.get("q") || "";
