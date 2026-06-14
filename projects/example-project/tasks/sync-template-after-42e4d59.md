@@ -1,7 +1,7 @@
 ---
 id: 11
 project: "[[example-project/example-project]]"
-status: blocked
+status: doing
 tags: [task]
 created: 2026-06-14
 created_at: 2026-06-14T21:10:38+03:00
@@ -30,10 +30,11 @@ model_tier: junior
 - [ ] Валидатор и затронутые функции проходят проверку
 
 ## Пререквизиты
-Восстановить получение содержимого репозитория GitHub: `git fetch`, GitHub API через `curl` и `gh api` зависают без ответа; `git ls-remote` работает и подтверждает HEAD `b0bd7ef`.
+нет
 
 ## Вопросы
 нет
 
 ## Заметки
 Попытки 2026-06-14: полный fetch, shallow fetch конкретного SHA, REST compare через curl и `gh api` — все остановлены после зависания без вывода. Частичный перенос не выполнялся.
+2026-06-14 архив commit `b0bd7ef` успешно получен через `codeload.github.com`; блокер снят, задача возвращена в работу.
