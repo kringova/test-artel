@@ -1,0 +1,5 @@
+#!/bin/sh
+# Гейт закрытия задач (Артель): агент не коммитит переход в `done`.
+# Установка: git config core.hooksPath .githooks
+# Апрув-сервис (апрув-поверхность адоптера) ставит ARTEL_APPROVE=1, чтобы пройти.
+python3 "$(git rev-parse --show-toplevel)/scripts/check-task-close.py" || exit 1
