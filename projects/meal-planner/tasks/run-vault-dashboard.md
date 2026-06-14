@@ -1,12 +1,12 @@
 ---
 id: 5
 project: "[[meal-planner/meal-planner]]"
-status: review
+status: done
 tags: [task]
 created: 2026-06-14
 created_at: 2026-06-14T18:07:28+03:00
 updated: 2026-06-14
-closed_at:
+closed_at: 2026-06-14T16:22:27.181Z
 sp: 1
 rice_reach: 2
 rice_impact: 2

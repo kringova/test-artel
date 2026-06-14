@@ -896,8 +896,8 @@ function approveTask(id) {
   }
 
   // closed_at
-  if (/^closed_at:\s*.*$/m.test(changed)) {
-    changed = changed.replace(/^closed_at:\s*.*$/m, `closed_at: ${now}`);
+  if (/^closed_at:[^\r\n]*$/m.test(changed)) {
+    changed = changed.replace(/^closed_at:[^\r\n]*$/m, `closed_at: ${now}`);
   } else {
     changed = changed.replace(/^updated:\s*.*$/m, (m) => `${m}\nclosed_at: ${now}`);
   }
