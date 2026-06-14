@@ -1,12 +1,12 @@
 ---
 id: 8
 project: "[[example-project/example-project]]"
-status: review
+status: done
 tags: [task, bug]
 created: 2026-06-14
 created_at: 2026-06-14T19:18:13+03:00
 updated: 2026-06-14
-closed_at:
+closed_at: 2026-06-14T16:43:40.035Z
 sp: 2
 rice_reach: 4
 rice_impact: 4
