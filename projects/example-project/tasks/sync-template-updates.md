@@ -1,13 +1,12 @@
 ---
 id: 6
 project: "[[example-project/example-project]]"
-status: review
+status: done
 tags: [task]
 created: 2026-06-14
 created_at: 2026-06-14T18:57:14+03:00
 updated: 2026-06-14
-closed_at:
-sp: 3
+closed_at: 2026-06-14T16:03:07.737Z
 rice_reach: 5
 rice_impact: 4
 rice_confidence: 90
