@@ -30,3 +30,4 @@ updated: 2026-06-14
 
 ## Что сделано в сессии 2026-06-14
 - [[tasks/sync-template-updates]] — обновления `kringova/artelush/main` перенесены и проверены, в review, ждёт апрува
+- [[tasks/sync-template-tiering-contract]] — контракт адаптера тиринга перенесён, Codex-маппинг объявлен, в review, ждёт апрува
