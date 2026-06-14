@@ -1,3 +1,6 @@
+<!-- Audience: агент или разработчик, создающий или редактирующий файлы vault
+     Purpose: быстро найти структуру директорий и все поля frontmatter задачи/проекта/инбокса -->
+
 # Справочник по структуре
 
 ```
@@ -38,10 +41,12 @@ docs/
 ---
 id: 42                      # сквозной номер тикета (max по vault + 1)
 project: "[[slug/slug]]"    # wiki-ссылка на карточку проекта
-status: todo                # todo | doing | done | blocked | cancelled
+status: todo                # todo | doing | review | done | blocked | cancelled
 tags: [task]                # + bug для багов/инцидентов
 created: 2026-06-12
+created_at: 2026-06-12T10:00:00  # обязательно: ISO datetime создания
 updated: 2026-06-12         # обновлять при каждом изменении
+closed_at:                  # обязательно при закрытии: ISO datetime закрытия
 sp: 3                       # Story Points — размер (Фибоначчи 1/2/3/5/8/13), не время
 rice_reach: 5               # 1–10
 rice_impact: 3              # 1–5
@@ -50,6 +55,7 @@ rice_effort: 0.6            # sp / 5, минимум 0.1
 summary: "Одна строка для индексов"
 roles: [reviewer, techwriter]  # опц.: роли, выведенные из RICE-порогов (см. roles.md)
 model_tier: middle          # грейд модели по природе задачи (см. methodology.md)
+next_up: false              # опц.: запланировано к взятию в работу (true → навык sync берёт в doing)
 ---
 ```
 
@@ -58,6 +64,8 @@ model_tier: middle          # грейд модели по природе зад
 Поле `roles` — какие роли Артели включаются на задаче; выводится из компонентов RICE (пороги — в [roles.md](roles.md) и [workflow.md](workflow.md)).
 
 Поле `sp` — размер задачи в Story Points (Фибоначчи), первичная оценка вместо времени; `rice_effort = sp/5`. Поле `model_tier` — грейд модели по природе задачи. Оба — в [methodology.md](methodology.md). Старые задачи могут иметь `est_days` вместо `sp` (переходный период).
+
+Поле `next_up: true/false` — опциональное; при `true` навык `sync` берёт эту задачу в работу (`doing`) в начале сессии.
 
 ## Frontmatter проекта
 

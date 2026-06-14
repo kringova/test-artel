@@ -6,7 +6,7 @@ tags: [project]
 audience: "пример — удалите этот проект"
 repo: ""
 local: ""
-updated: 2026-06-12
+updated: 2026-06-14
 ---
 
 ## Суть
@@ -27,3 +27,6 @@ updated: 2026-06-12
 | Своих проектов | ≥1 | 0 |
 
 ## Связанное
+
+## Что сделано в сессии 2026-06-14
+- [[tasks/sync-template-updates]] — обновления `kringova/artelush/main` перенесены и проверены, в review, ждёт апрува
