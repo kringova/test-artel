@@ -433,6 +433,10 @@ function analyticsPage({ projects, tasks }) {
 
   // --- Задача 1+2: маппинг грейд→модель ---
   const gradeMap = readGradeMap();
+  // Детектируем вырожденный тиринг: маппинг есть, но все грейды → одна модель
+  // Нормализуем: убираем финальную пунктуацию и пробелы перед сравнением
+  const normModel = (s) => s.replace(/[.,;:!?]+$/, "").trim();
+  const isDegenerate = gradeMap !== null && new Set([normModel(gradeMap.junior), normModel(gradeMap.middle), normModel(gradeMap.senior)]).size === 1;
 
   // --- Задача 3: фактическое использование моделей по грейдам ---
   // Парсим cost_by_model: "model-name=io/cache; model-name2=io/cache"
@@ -520,6 +524,7 @@ function analyticsPage({ projects, tasks }) {
       <div class="an-grade-map-row"><span class="grade-badge" style="background:${GRADE_BADGE.junior.bg};color:${GRADE_BADGE.junior.color}">${GRADE_BADGE.junior.emoji}</span> <span class="an-gm-grade">junior</span> <span class="an-gm-model">${esc(gradeMap.junior)}</span></div>
       <div class="an-grade-map-row"><span class="grade-badge" style="background:${GRADE_BADGE.middle.bg};color:${GRADE_BADGE.middle.color}">${GRADE_BADGE.middle.emoji}</span> <span class="an-gm-grade">middle</span> <span class="an-gm-model">${esc(gradeMap.middle)}</span></div>
       <div class="an-grade-map-row"><span class="grade-badge" style="background:${GRADE_BADGE.senior.bg};color:${GRADE_BADGE.senior.color}">${GRADE_BADGE.senior.emoji}</span> <span class="an-gm-grade">senior</span> <span class="an-gm-model">${esc(gradeMap.senior)}</span></div>
+      ${isDegenerate ? '<p class="an-degenerate-hint" style="margin-top:8px">вырожден: одна модель на все грейды (тиринг не разводит модели)</p>' : ""}
     </div>`
     : `<div class="an-card">
       <div class="an-card-title">Грейд → модель</div>
@@ -562,9 +567,14 @@ function analyticsPage({ projects, tasks }) {
       ${totalDone === 0
         ? '<p class="an-empty">Нет закрытых задач</p>'
         : `<div class="an-coverage-bar-wrap">
-            <div class="an-coverage-bar" style="width:${coveragePct}%;background:#10b981"></div>
+            <div class="an-coverage-bar" style="width:${coveragePct}%;background:${isDegenerate ? "#fbbf24" : (gradeMap === null ? "#fbbf24" : "#10b981")}"></div>
            </div>
-           <div class="an-coverage-num">${coveragePct}%</div>
+           <div class="an-coverage-num">${coveragePct}%${isDegenerate || gradeMap === null ? ' <span style="font-size:14px;font-weight:400;color:#b45309">⚠</span>' : ""}</div>
+           ${isDegenerate
+             ? `<p class="an-degenerate-hint">⚠ тиринг не дифференцирован: все грейды → ${esc(gradeMap.junior)}; покрытие неинформативно</p>`
+             : gradeMap === null
+               ? '<p class="an-degenerate-hint">маппинг не задан — тиринг не маршрутизирует</p>'
+               : ""}
            ${doneWithTier.length > 0
              ? ["junior", "middle", "senior"].map((g) => tierBar(g, tierByGrade[g])).join("")
              : '<p class="an-empty">Ни одна done-задача не имеет model_tier</p>'}`}
@@ -968,6 +978,7 @@ function renderShell(data, page, title, subtitle, content) {
   .an-gm-grade { font-size:13px; color:var(--muted); width:48px; flex:none; }
   .an-gm-model { font-size:13px; font-weight:500; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .an-gm-unmatched { color:var(--muted); font-style:italic; }
+  .an-degenerate-hint { font-size:12px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:5px 9px; margin:8px 0 0; line-height:1.4; }
   /* Поиск */
   .search-form { display:flex; gap:8px; margin-bottom:22px; flex-wrap:wrap; }
   .search-input { flex:1; min-width:0; border:1px solid var(--line); border-radius:9px; padding:9px 13px; font:inherit; font-size:15px; outline:none; background:#fff; }

@@ -3,7 +3,7 @@ status: idea
 type: product
 priority: medium
 tags: [project]
-audience: ""
+audience: ""  # портрет: КТО (роль/тип), а не что делает. Пример: "разработчик-одиночка", "домашний повар", не "человек, который хочет..."
 repo: ""
 local: ""
 updated: {{date}}

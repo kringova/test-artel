@@ -106,9 +106,11 @@ def duplicate_ids(staged: list[str]) -> list[tuple[str, list[str]]]:
 
 
 def main() -> int:
-    # Апрув-поток (апрув-поверхность адоптера) — единственный легальный путь в done.
-    if os.environ.get("ARTEL_APPROVE"):
-        return 0
+    # ARTEL_APPROVE=1 выставляет ТОЛЬКО апрув-поверхность (дашборд/CI), не агент.
+    # Агент, ставящий флаг сам, обходит потолок review — это нарушение канона,
+    # даже если технически проходит.
+    # Флаг разблокирует ТОЛЬКО гейт 1 (done-апрув); гейты 2, 3, 4 работают всегда.
+    approved = bool(os.environ.get("ARTEL_APPROVE"))
 
     staged = staged_files()
 
@@ -125,7 +127,8 @@ def main() -> int:
         entering = new_status in ("review", "done") and old_status not in ("review", "done")
 
         # Гейт 1 — done только через апрув-поверхность.
-        if new_status == "done" and old_status != "done":
+        # ARTEL_APPROVE=1 разблокирует только этот гейт.
+        if new_status == "done" and old_status != "done" and not approved:
             offenders.append(f)
 
         # Гейт 2 — created_at обязателен.

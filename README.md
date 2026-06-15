@@ -55,7 +55,7 @@
 ```text
 Ты ведёшь мой проектный vault по методологии Артели. Сначала прочитай в корне
 репозитория AGENTS.md и _rules.md — это твои правила. Навыки лежат в
-skills/*/SKILL.md (sync, backlog, close, recap, inbox) — выполняй их по шагам, когда
+skills/*/SKILL.md (sync, backlog, close, recap, inbox, onboard) — выполняй их по шагам, когда
 применимы. Ключевое: каждое значимое действие отражай задачей и не отчитывайся
 «готово», пока работа не отражена задачей и не проверена. Начни с sync — загрузи
 контекст всех проектов и предложи, с чего начать.
@@ -79,7 +79,7 @@ skills/*/SKILL.md (sync, backlog, close, recap, inbox) — выполняй их
 
 **Справка**
 - [Архитектура](docs/architecture.md) — из чего собран шаблон, роль каждой папки
-- [Навыки](docs/skills.md) — sync / backlog / close / recap / inbox, как добавить свой
+- [Навыки](docs/skills.md) — sync / backlog / close / recap / inbox / onboard, как добавить свой
 - [Справочник полей](docs/reference.md) — структура и все поля frontmatter
 - [FAQ](docs/faq.md)
 - [Changelog](CHANGELOG.md) — изменения методологии
@@ -116,6 +116,7 @@ skills/
   close/             ← закрыть задачу (done + лог сессии) или завести постфактум
   recap/             ← итоги за период (день/неделя/месяц) для ревью и саморефлексии
   inbox/             ← разобрать _inbox/ в задачи
+  onboard/           ← поднять канон доки существующего проекта (brownfield)
 ```
 
 ## Ключевые конвенции
