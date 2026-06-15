@@ -4,6 +4,7 @@ type: product
 priority: medium
 tags: [project]
 audience: ""  # портрет: КТО (роль/тип), а не что делает. Пример: "разработчик-одиночка", "домашний повар", не "человек, который хочет..."
+jtbd: ""      # Job To Be Done одной строкой: "когда я …, хочу …, чтобы …" (Purpose аудитории)
 repo: ""
 local: ""
 updated: {{date}}

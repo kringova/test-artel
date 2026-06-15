@@ -38,3 +38,4 @@ updated: 2026-06-15
 
 ## Что сделано в сессии 2026-06-15
 - [[tasks/sync-template-after-b0bd7ef]] — обновления шаблона после `b0bd7ef` перенесены, `onboard` добавлен, дашборд и валидатор синхронизированы, в review, ждёт апрува
+- [[tasks/sync-template-after-6bc357d]] — добавлены шаблоны `brief/decisions/scenarios`, роадмап, `charter` и `jtbd`, в review, ждёт апрува
